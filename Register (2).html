@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- โหลด LIFF SDK แบบ dynamic พร้อม fallback 2 URL -->
+    <script>
+      function loadScript(url) {
+        return new Promise(function(resolve, reject) {
+          var s = document.createElement('script');
+          s.src = url;
+          s.onload = resolve;
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+
+      window.liffReady = loadScript('https://static.line-scdn.net/liff/edge/versions/2.22.3/sdk.js')
+        .catch(function() {
+          return loadScript('https://cdn.jsdelivr.net/npm/@line/liff@2.22.3/dist/liff.min.js');
+        })
+        .catch(function() {
+          return loadScript('https://unpkg.com/@line/liff@2.22.3/dist/liff.min.js');
+        });
+    </script>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+      * { font-family: 'Sarabun', sans-serif; }
+    </style>
+  </head>
+
+  <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100">
+
+      <!-- Header -->
+      <div class="text-center mb-8">
+        <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+        </div>
+        <h2 class="text-2xl font-bold text-slate-800">ลงทะเบียนรับผลตรวจ</h2>
+        <p class="text-slate-500 mt-2 text-sm">กรุณากรอกเลขบัตรประชาชนเพื่อยืนยันตัวตน</p>
+      </div>
+
+      <!-- Status Badge -->
+      <div id="statusBadge" class="mb-4 text-center">
+        <span class="inline-flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-1.5 rounded-full">
+          <span class="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
+          กำลังเชื่อมต่อ LINE...
+        </span>
+      </div>
+
+      <!-- Form -->
+      <div class="space-y-5">
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1.5">เลขบัตรประชาชน 13 หลัก</label>
+          <!-- ✅ เปลี่ยนจาก type="number" เป็น type="text" inputmode="numeric" เพื่อไม่ตัด 0 นำหน้า -->
+          <input
+            type="text"
+            inputmode="numeric"
+            maxlength="13"
+            id="idCard"
+            class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-blue-500 focus:ring-0 outline-none transition-all text-lg tracking-widest"
+            placeholder="x x x x x x x x x x x x x"
+            oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+          >
+          <p id="idCardError" class="text-red-500 text-xs mt-1 hidden">กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก</p>
+        </div>
+
+        <button
+          onclick="submitData()"
+          id="btnSubmit"
+          disabled
+          class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition-all active:scale-95 text-base"
+        >
+          กำลังเตรียมระบบ...
+        </button>
+
+        <!-- Retry button (ซ่อนไว้ก่อน) -->
+        <button
+          onclick="retryLiff()"
+          id="btnRetry"
+          class="hidden w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium py-3 px-4 rounded-xl transition-all text-sm"
+        >
+          🔄 ลองใหม่อีกครั้ง
+        </button>
+      </div>
+
+      <!-- Loader -->
+      <div id="loader" class="hidden mt-5 text-center">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent"></div>
+        <p class="text-slate-500 text-sm mt-2">กำลังตรวจสอบข้อมูล...</p>
+      </div>
+
+      <!-- Debug info (แสดงเฉพาะตอน dev เอาออกตอน production) -->
+      <div id="debugInfo" class="mt-4 p-3 bg-slate-50 rounded-lg text-xs text-slate-400 hidden"></div>
+    </div>
+
+<script>
+  let lineId = "";
+  const LIFF_ID = "2009740799-1HKGvImp"; // ✅ เปลี่ยน LIFF ID ตรงนี้
+
+  // ✅ ฟังก์ชันหลัก - แก้ปัญหา User ID ไม่ได้
+  async function initLiff() {
+    const btn = document.getElementById('btnSubmit');
+    const badge = document.getElementById('statusBadge');
+    const debug = document.getElementById('debugInfo');
+
+    try {
+      console.log("1. รอ LIFF SDK โหลด...");
+
+      // รอ SDK โหลดก่อน พร้อม timeout 10 วินาที
+      await Promise.race([
+        window.liffReady,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("SDK โหลดนานเกิน 10 วินาที")), 10000))
+      ]);
+
+      if (typeof liff === 'undefined') {
+        throw new Error("LIFF SDK โหลดไม่สำเร็จ กรุณาเปิดใน LINE อีกครั้ง");
+      }
+
+      console.log("2. เริ่ม init LIFF...");
+
+      await liff.init({
+        liffId: LIFF_ID,
+        withLoginOnExternalBrowser: true
+      });
+
+      console.log("2. LIFF init สำเร็จ");
+      console.log("3. isLoggedIn:", liff.isLoggedIn());
+      console.log("4. isInClient:", liff.isInClient());
+
+      if (!liff.isLoggedIn()) {
+        console.log("5. ยังไม่ได้ login → redirect...");
+        badge.innerHTML = `<span class="inline-flex items-center gap-2 text-sm text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full">กำลัง redirect ไป LINE Login...</span>`;
+        liff.login();
+        return;
+      }
+
+      // ✅ ดึง Profile
+      console.log("5. กำลังดึง Profile...");
+      const profile = await liff.getProfile();
+      lineId = profile.userId;
+
+      console.log("6. ได้ lineId:", lineId ? lineId.substring(0, 10) + "..." : "ไม่ได้");
+
+      if (!lineId) {
+        throw new Error("ได้รับ Profile แต่ userId เป็นค่าว่าง");
+      }
+
+      // สำเร็จ
+      badge.innerHTML = `
+        <span class="inline-flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-1.5 rounded-full">
+          <span class="w-2 h-2 bg-green-400 rounded-full"></span>
+          เชื่อมต่อ LINE สำเร็จ: ${profile.displayName}
+        </span>`;
+      btn.disabled = false;
+      btn.innerText = "ยืนยันข้อมูล";
+
+    } catch (err) {
+      console.error("LIFF Error:", err);
+
+      // แสดง debug info
+      debug.classList.remove('hidden');
+      debug.innerHTML = `
+        <strong>Debug:</strong><br>
+        Error: ${err.message}<br>
+        isInClient: ${typeof liff !== 'undefined' ? liff.isInClient() : 'liff ไม่โหลด'}<br>
+        URL: ${window.location.href}
+      `;
+
+      badge.innerHTML = `
+        <span class="inline-flex items-center gap-2 text-sm text-red-600 bg-red-50 px-3 py-1.5 rounded-full">
+          ⚠️ เชื่อมต่อ LINE ไม่สำเร็จ
+        </span>`;
+
+      btn.innerText = "ระบบขัดข้อง";
+      document.getElementById('btnRetry').classList.remove('hidden');
+
+      // แจ้งแนะนำวิธีแก้
+      if (!liff.isInClient()) {
+        badge.innerHTML += `<p class="text-xs text-slate-400 mt-2">💡 กรุณาเปิดลิงก์นี้ผ่านแอป LINE โดยตรง</p>`;
+      }
+    }
+  }
+
+  // ✅ ปุ่ม retry
+  function retryLiff() {
+    document.getElementById('btnRetry').classList.add('hidden');
+    document.getElementById('debugInfo').classList.add('hidden');
+    initLiff();
+  }
+
+  // เริ่มทำงาน
+  initLiff();
+
+  // ✅ ฟังก์ชัน submit
+  function submitData() {
+    const idCard = document.getElementById('idCard').value.trim();
+    const btn = document.getElementById('btnSubmit');
+    const errorEl = document.getElementById('idCardError');
+
+    // Validate
+    if (!lineId) {
+      alert("ไม่พบรหัส LINE ID กรุณาเปิดใหม่จากแอป LINE");
+      return;
+    }
+
+    if (idCard.length !== 13) {
+      errorEl.classList.remove('hidden');
+      document.getElementById('idCard').focus();
+      return;
+    } else {
+      errorEl.classList.add('hidden');
+    }
+
+    // ส่งข้อมูล
+    btn.disabled = true;
+    btn.innerText = "กำลังตรวจสอบข้อมูล...";
+    document.getElementById('loader').classList.remove('hidden');
+
+    google.script.run
+      .withSuccessHandler(function(response) {
+        document.getElementById('loader').classList.add('hidden');
+        alert(response);
+
+        if (response.includes("สำเร็จ")) {
+          // ปิดหน้าต่างถ้าอยู่ใน LINE
+          if (liff.isInClient()) {
+            liff.closeWindow();
+          }
+        } else {
+          btn.disabled = false;
+          btn.innerText = "ยืนยันข้อมูล";
+        }
+      })
+      .withFailureHandler(function(err) {
+        document.getElementById('loader').classList.add('hidden');
+        alert("เกิดข้อผิดพลาด: " + err.message);
+        btn.disabled = false;
+        btn.innerText = "ยืนยันข้อมูล";
+      })
+      .registerUser(idCard, lineId);
+  }
+
+  // Hide error เมื่อพิมพ์
+  document.getElementById('idCard').addEventListener('input', function() {
+    document.getElementById('idCardError').classList.add('hidden');
+  });
+</script>
+</body>
+</html>
