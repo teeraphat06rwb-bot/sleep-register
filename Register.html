@@ -14,8 +14,7 @@
         });
       }
       window.liffReady = loadScript('https://static.line-scdn.net/liff/edge/versions/2.22.3/sdk.js')
-        .catch(function() { return loadScript('https://cdn.jsdelivr.net/npm/@line/liff@2.22.3/dist/liff.min.js'); })
-        .catch(function() { return loadScript('https://unpkg.com/@line/liff@2.22.3/dist/liff.min.js'); });
+        .catch(function() { return loadScript('https://cdn.jsdelivr.net/npm/@line/liff@2.22.3/dist/liff.min.js'); });
     </script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
@@ -72,8 +71,8 @@
   let lineId = "";
   const LIFF_ID = "2009740799-1HKGvImp";
 
-  // ✅ URL Apps Script ของคุณ
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyE5KDBqMz0oKZo2I4NTo0BjksHeaMhSVe7bidWyGUdPXRGYila1SRf1Afbb4iMqKgMBg/exec";
+  // ✅ ใส่ URL Apps Script ของคุณตรงนี้
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzNf9c-B9gHntutsNOt-1Jrd7nwxtDH-jCoIRVLdM0eDQGUd4MTAV2nlDumlqcH_uY0Ag/exec";
 
   async function initLiff() {
     const btn = document.getElementById('btnSubmit');
@@ -131,22 +130,26 @@
     document.getElementById('loader').classList.remove('hidden');
 
     try {
-      const url = APPS_SCRIPT_URL
-        + "?action=registerUser"
-        + "&idCard=" + encodeURIComponent(idCard)
-        + "&lineUserId=" + encodeURIComponent(lineId);
+      // ✅ ส่งแบบ POST + follow redirect อัตโนมัติ
+      const res = await fetch(APPS_SCRIPT_URL + "?action=registerUser", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idCard: idCard, lineUserId: lineId }),
+        redirect: "follow"
+      });
 
-      // ✅ ใช้ no-cors mode — Apps Script จะทำงานแต่เราอ่าน response ไม่ได้
-      // วิธีแก้: บันทึกข้อมูลก่อน แล้วดึงผลลัพธ์ภายหลัง
-      await fetch(url, { method: 'GET', mode: 'no-cors' });
+      const data = await res.json();
+      const response = data.result;
 
       document.getElementById('loader').classList.add('hidden');
+      alert(response);
 
-      // no-cors อ่าน response ไม่ได้ เลยสมมติว่าสำเร็จแล้วแจ้งให้ตรวจสอบ
-      // แต่ถ้าอยากรู้ผลจริงๆ ต้องเช็คที่ Google Sheet แทน
-      alert("ส่งข้อมูลแล้วครับ กรุณารอการยืนยันจากเจ้าหน้าที่");
-      if (liff.isInClient()) liff.closeWindow();
-
+      if (response.includes("สำเร็จ")) {
+        if (liff.isInClient()) liff.closeWindow();
+      } else {
+        btn.disabled = false;
+        btn.innerText = "ยืนยันข้อมูล";
+      }
     } catch (err) {
       document.getElementById('loader').classList.add('hidden');
       alert("เกิดข้อผิดพลาด: " + err.message);
