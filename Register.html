@@ -72,7 +72,7 @@
   let lineId = "";
   const LIFF_ID = "2009740799-1HKGvImp";
 
-  // ✅ ใส่ URL Apps Script ของคุณตรงนี้
+  // ✅ URL Apps Script ของคุณ
   const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyE5KDBqMz0oKZo2I4NTo0BjksHeaMhSVe7bidWyGUdPXRGYila1SRf1Afbb4iMqKgMBg/exec";
 
   async function initLiff() {
@@ -117,39 +117,6 @@
 
   initLiff();
 
-  // ✅ ใช้ JSONP แก้ปัญหา CORS ระหว่าง GitHub Pages กับ Apps Script
-  function callJsonp(url) {
-    return new Promise(function(resolve, reject) {
-      const cbName = "cb_" + Date.now();
-      const script = document.createElement('script');
-
-      // timeout 15 วินาที
-      const timer = setTimeout(function() {
-        cleanup();
-        reject(new Error("หมดเวลาเชื่อมต่อ กรุณาลองใหม่"));
-      }, 15000);
-
-      function cleanup() {
-        clearTimeout(timer);
-        delete window[cbName];
-        if (script.parentNode) script.parentNode.removeChild(script);
-      }
-
-      window[cbName] = function(data) {
-        cleanup();
-        resolve(data);
-      };
-
-      script.onerror = function() {
-        cleanup();
-        reject(new Error("เชื่อมต่อ Apps Script ไม่ได้"));
-      };
-
-      script.src = url + "&callback=" + cbName;
-      document.head.appendChild(script);
-    });
-  }
-
   async function submitData() {
     const idCard = document.getElementById('idCard').value.trim();
     const btn = document.getElementById('btnSubmit');
@@ -169,17 +136,17 @@
         + "&idCard=" + encodeURIComponent(idCard)
         + "&lineUserId=" + encodeURIComponent(lineId);
 
-      const response = await callJsonp(url);
+      // ✅ ใช้ no-cors mode — Apps Script จะทำงานแต่เราอ่าน response ไม่ได้
+      // วิธีแก้: บันทึกข้อมูลก่อน แล้วดึงผลลัพธ์ภายหลัง
+      await fetch(url, { method: 'GET', mode: 'no-cors' });
 
       document.getElementById('loader').classList.add('hidden');
-      alert(response);
 
-      if (response.includes("สำเร็จ")) {
-        if (liff.isInClient()) liff.closeWindow();
-      } else {
-        btn.disabled = false;
-        btn.innerText = "ยืนยันข้อมูล";
-      }
+      // no-cors อ่าน response ไม่ได้ เลยสมมติว่าสำเร็จแล้วแจ้งให้ตรวจสอบ
+      // แต่ถ้าอยากรู้ผลจริงๆ ต้องเช็คที่ Google Sheet แทน
+      alert("ส่งข้อมูลแล้วครับ กรุณารอการยืนยันจากเจ้าหน้าที่");
+      if (liff.isInClient()) liff.closeWindow();
+
     } catch (err) {
       document.getElementById('loader').classList.add('hidden');
       alert("เกิดข้อผิดพลาด: " + err.message);
